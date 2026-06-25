@@ -1,15 +1,19 @@
 package com.yuwan.arutalalab.order_service.service;
 
 import com.yuwan.arutalalab.order_service.client.CatalogClient;
+import com.yuwan.arutalalab.order_service.dto.OrderItemRequest;
 import com.yuwan.arutalalab.order_service.dto.OrderRequest;
 import com.yuwan.arutalalab.order_service.dto.OrderResponse;
 import com.yuwan.arutalalab.order_service.dto.ProductResponse;
 import com.yuwan.arutalalab.order_service.entity.Order;
 import com.yuwan.arutalalab.order_service.entity.OrderItem;
+import com.yuwan.arutalalab.order_service.entity.OrderStatus;
 import com.yuwan.arutalalab.order_service.repository.OrderRepository;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import org.springframework.stereotype.Service;
+import com.yuwan.arutalalab.order_service.dto.OrderItemRequest;
+import com.yuwan.arutalalab.order_service.dto.OrderItemResponse;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,13 +31,13 @@ public class OrderService {
     @Transactional
     public OrderResponse createOrder(@Valid OrderRequest request) {
         Order order = new Order();
-        order.setCustomerName(order.getCustomerName());
-        order.setCustomerEmail(order.getCustomerEmail());
-        order.setOrderStatus(order.getOrderStatus());
+        order.setCustomerName(request.getCustomerName());
+        order.setCustomerEmail(request.getEmail());
+        order.setOrderStatus(OrderStatus.PENDING);
 
         List<OrderItem> orderItems = new ArrayList<>();
 
-        for (OrderItem orderItem : request.getOrderItems()) {
+        for (OrderItemRequest itemReq : request.getOrderItems()) {
             ProductResponse product = catalogClient.getProduct(itemReq.getProductId());
 
             //Validasi Stock
@@ -45,40 +49,44 @@ public class OrderService {
             OrderItem orderItem = new OrderItem();
             orderItem.setProductId(product.getId());
             orderItem.setProductName(product.getName());
-            orderItem.setProductPrice(product.getPrice());
+            orderItem.setPrice(product.getPrice());
             orderItem.setQuantity(itemReq.getQuantity());
             orderItem.setOrder(order); // Relasikan kembali ke order utama
 
-            items.add(orderItem);
+            orderItems.add(orderItem);
 
             // Kurangi Stok di catalog-service
             int remainingStock = product.getStock() - itemReq.getQuantity();
             catalogClient.updateStock(product.getId(), remainingStock);
         }
 
-        order.setItems(items);
+        order.setOrderItems(items);
 
         // 3. Simpan Order ke Database (order_db)
         Order savedOrder = orderRepository.save(order);
 
-        // 4. MAPPING Balik ke Response DTO
+        // 4. Response DTO
         OrderResponse response = new OrderResponse();
         response.setId(savedOrder.getId());
         response.setCustomerName(savedOrder.getCustomerName());
-        response.setCustomerEmail(savedOrder.getCustomerEmail());
-        response.setStatus(savedOrder.getStatus().name());
+        response.setEmail(savedOrder.getCustomerEmail());
+        response.setStatus(savedOrder.getOrderStatus().name());
 
         List<OrderItemResponse> responseItems = new ArrayList<>();
-        for (OrderItem savedItem : savedOrder.getItems()) {
+        for (OrderItem savedItem : savedOrder.getOrderItems()) {
             OrderItemResponse itemRes = new OrderItemResponse();
             itemRes.setProductId(savedItem.getProductId());
             itemRes.setProductName(savedItem.getProductName());
-            itemRes.setProductPrice(savedItem.getProductPrice());
+            itemRes.setProductPrice(savedItem.getPrice());
             itemRes.setQuantity(savedItem.getQuantity());
             responseItems.add(itemRes);
         }
-        response.setItems(responseItems);
+
+        response.setOrderItems(responseItems);
 
         return response;
     }
+
+
+
 }

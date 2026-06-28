@@ -11,12 +11,13 @@ import com.yuwan.arutalalab.order_service.entity.OrderStatus;
 import com.yuwan.arutalalab.order_service.repository.OrderRepository;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
-import com.yuwan.arutalalab.order_service.dto.OrderItemRequest;
 import com.yuwan.arutalalab.order_service.dto.OrderItemResponse;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class OrderService {
@@ -28,6 +29,8 @@ public class OrderService {
         this.catalogClient = catalogClient;
     }
 
+
+    //Method untuk membuat order
     @Transactional
     public OrderResponse createOrder(@Valid OrderRequest request) {
         Order order = new Order();
@@ -60,12 +63,75 @@ public class OrderService {
             catalogClient.updateStock(product.getId(), remainingStock);
         }
 
-        order.setOrderItems(items);
+        order.setOrderItems(orderItems);
 
         // 3. Simpan Order ke Database (order_db)
         Order savedOrder = orderRepository.save(order);
 
         // 4. Response DTO
+
+        return getOrderResponse(savedOrder);
+    }
+
+    //Method untuk membayar
+    @Transactional
+    public OrderResponse payOrder(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Pesanan dengan " + orderId + " yang Anda maksud tidak tersedia"
+                ));
+        if(order.getOrderStatus().equals(OrderStatus.PENDING )){
+            order.setOrderStatus(OrderStatus.PAID);
+            orderRepository.save(order);
+            return getOrderResponse(order);
+        }else {
+            throw new RuntimeException("Order Status tidak Valid, karena status order adalah" + order.getOrderStatus());
+        }
+
+    }
+
+    @Transactional
+    public OrderResponse cancelOrder(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Pesanan dengan " + orderId + " yang Anda maksud tidak tersedia"
+                ));
+        if(order.getOrderStatus().equals(OrderStatus.PENDING)){
+            order.setOrderStatus(OrderStatus.CANCELLED);
+
+            for(OrderItem itemRequest : order.getOrderItems()){
+                ProductResponse product = catalogClient.getProduct(itemRequest.getProductId());
+                int newStock = product.getStock() + itemRequest.getQuantity();
+                catalogClient.updateStock(itemRequest.getProductId(), newStock);
+            }
+            orderRepository.save(order);
+            return getOrderResponse(order);
+        }else{
+            throw new RuntimeException("Order Status tidak Valid, karena status order adalah" + order.getOrderStatus());
+        }
+    }
+
+    public List<OrderResponse> getAllOrders() {
+
+        List<OrderResponse> orderResponseList = new ArrayList<>();
+        Iterable<Order> orders = orderRepository.findAll();
+
+        for (Order order : orders) {
+            orderResponseList.add(getOrderResponse(order));
+        }
+        return orderResponseList;
+    }
+
+    public OrderResponse getOrders(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Pesanan dengan " + orderId + " yang Anda maksud tidak tersedia"
+                ));
+        return getOrderResponse(order);
+    }
+
+    @NonNull
+    private static OrderResponse getOrderResponse(Order savedOrder) {
         OrderResponse response = new OrderResponse();
         response.setId(savedOrder.getId());
         response.setCustomerName(savedOrder.getCustomerName());
@@ -83,10 +149,8 @@ public class OrderService {
         }
 
         response.setOrderItems(responseItems);
-
         return response;
     }
-
 
 
 }
